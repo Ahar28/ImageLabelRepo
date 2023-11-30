@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { Form, Button, Container, Image, Alert, Table } from "react-bootstrap";
 import axios from "axios";
-import APIs from "../../../util/APIs";
+import APIs from "../util/APIs";
 
 const ImageUpload = () => {
   const [image, setImage] = useState(null);
