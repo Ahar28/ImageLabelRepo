@@ -75,8 +75,6 @@ const ImageUpload = () => {
     } catch (error) {
       console.error("Error uploading image:", error.message);
       setUploadStatus({ type: "danger", message: "Error uploading image" });
-    } finally {
-      setLoading(false); // Set loading to false after upload is complete (whether successful or not)
     }
   };
 
@@ -101,8 +99,6 @@ const ImageUpload = () => {
       // You can update the UI or state accordingly based on the response
     } catch (error) {
       console.error("Error fetching details:", error.message);
-    } finally {
-      setLoading(false); // Set loading to false after fetching details
     }
   };
 
