@@ -52,7 +52,7 @@ const ImageUpload = () => {
 
       // Make a POST request to your API using Axios
       const response = await axios.post(
-        //"https://p43chlplh3.execute-api.us-east-1.amazonaws.com/prod/upload-image",
+        // "https://ueaee89584.execute-api.us-east-1.amazonaws.com/prod/upload-image",
         APIs.API_Upload_Image,
         {
           imageData: base64Data,
@@ -75,6 +75,8 @@ const ImageUpload = () => {
     } catch (error) {
       console.error("Error uploading image:", error.message);
       setUploadStatus({ type: "danger", message: "Error uploading image" });
+    } finally {
+      setLoading(false); // Set loading to false after upload is complete (whether successful or not)
     }
   };
 
@@ -82,7 +84,7 @@ const ImageUpload = () => {
     try {
       // Make a POST request to the API for fetching details
       const response = await axios.post(
-        // "https://hi73mtyp1a.execute-api.us-east-1.amazonaws.com/prod/detect-labels",
+        //"https://qrii8ucem0.execute-api.us-east-1.amazonaws.com/prod/detect-labels",
         APIs.API_Fetch_details,
         { fileName: fileName }
       );
@@ -99,44 +101,69 @@ const ImageUpload = () => {
       // You can update the UI or state accordingly based on the response
     } catch (error) {
       console.error("Error fetching details:", error.message);
+    } finally {
+      setLoading(false); // Set loading to false after fetching details
     }
   };
 
   return (
     <Container className="mt-4">
-      <Form>
-        <Form.Group controlId="formImage">
-          <Form.Label className="h4">Upload Image</Form.Label>
-          <Form.Control type="file" onChange={handleImageChange} />
-        </Form.Group>
+      <div className="vue-uploadbox-wrap br-8 position-relative bg-main-7 p-10 bg-lighten">
+        <div className="d-flex br-8 fg-white h-75 w-100 bg-main-7 border-white border-dashed border-1 h-100">
+          <div className="w-100 h-100 d-flex flex-column align-items-center justify-content-center gap-150">
+            <Form>
+              <Form.Group controlId="formImage">
+                <Form.Label className="h4">Upload Image</Form.Label>
+                <Form.Control type="file" onChange={handleImageChange} />
+              </Form.Group>
 
-        <Button variant="primary" onClick={handleUpload} disabled={!image}>
-          Upload
-        </Button>
-      </Form>
-
+              <Button
+                variant="primary"
+                onClick={handleUpload}
+                disabled={!image}
+              >
+                Upload
+              </Button>
+            </Form>
+          </div>
+        </div>
+      </div>
+      {loading && <Spinner animation="border" variant="primary" />}{" "}
+      {/* Show spinner when loading */}
       {uploadStatus && (
         <Alert variant={uploadStatus.type} className="mt-2">
           {uploadStatus.message}
         </Alert>
       )}
-
       {image && (
         <div className="mt-4">
           <h2>Uploaded Image:</h2>
           <p className="h5">File Name: {fileName}</p>{" "}
           {/* Display the file name */}
-          <Image src={image} alt="Uploaded" thumbnail fluid />
+          <Image
+            src={image}
+            alt="Uploaded"
+            thumbnail
+            fluid
+            style={{ width: "300px", height: "200px" }} // Set specific dimensions here
+          />
+          <br></br>
           <Button variant="primary" onClick={handleFetch} className="mt-3">
             Fetch Details
           </Button>
         </div>
       )}
-
       {labelDetails.length > 0 && (
         <div className="mt-4">
           <Card>
-            <Card.Body>
+            {/* <Card.Body> */}
+            <Card.Body
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+              }}
+            >
               <Card.Title className="text-center">Label Details</Card.Title>
               <Table striped bordered hover responsive>
                 <thead className="thead-dark">
