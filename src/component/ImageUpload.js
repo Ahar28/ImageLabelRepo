@@ -1,6 +1,14 @@
 // src/components/ImageUpload.js
 import React, { useState } from "react";
-import { Form, Button, Container, Image, Alert, Table } from "react-bootstrap";
+import {
+  Form,
+  Button,
+  Container,
+  Image,
+  Alert,
+  Table,
+  Card,
+} from "react-bootstrap";
 import axios from "axios";
 import APIs from "../util/APIs";
 
