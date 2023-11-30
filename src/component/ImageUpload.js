@@ -128,7 +128,7 @@ const ImageUpload = () => {
           </div>
         </div>
       </div>
-      {loading && <Spinner animation="border" variant="primary" />}{" "}
+
       {/* Show spinner when loading */}
       {uploadStatus && (
         <Alert variant={uploadStatus.type} className="mt-2">
