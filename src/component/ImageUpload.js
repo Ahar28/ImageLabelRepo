@@ -102,6 +102,10 @@ const ImageUpload = () => {
     }
   };
 
+  const handleNewUpload = async () => {
+    window.location.reload();
+  };
+
   return (
     <Container className="mt-4">
       <div className="vue-uploadbox-wrap br-8 position-relative bg-main-7 p-10 bg-lighten">
@@ -109,16 +113,25 @@ const ImageUpload = () => {
           <div className="w-100 h-100 d-flex flex-column align-items-center justify-content-center gap-150">
             <Form>
               <Form.Group controlId="formImage">
-                <Form.Label className="h4">Upload Image</Form.Label>
+                <Form.Label className="h4">Upload Image : </Form.Label>
                 <Form.Control type="file" onChange={handleImageChange} />
               </Form.Group>
-
+              <br></br>
               <Button
                 variant="primary"
                 onClick={handleUpload}
                 disabled={!image}
               >
                 Upload
+              </Button>
+              <br></br>
+              <br></br>
+              <Button
+                variant="primary"
+                onClick={handleNewUpload}
+                disabled={!image}
+              >
+                New Upload
               </Button>
             </Form>
           </div>
