@@ -1,0 +1,310 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template for term assignment
+
+Resources:
+  #ec2 instance
+  EC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0230bd60aa48260c6
+      KeyName: serverlesslabkeypair
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo yum update -y
+          sudo yum install -y git
+          sudo yum install -y nodejs
+
+          git clone https://github.com/Ahar28/ImageLabelRepo.git /home/ec2-user/term-assign-app
+
+          # Executing deployment commands
+          cd /home/ec2-user/term-assign-app
+
+          echo "export const API_IMAGE_UPLOAD='https://${ImageUploadAPIGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/upload-image';" >> /home/ec2-user/term-assign-app/src/util/URLs.js
+          echo "export const API_Fetch_Details='https://${ImageLabelsAPIGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/detect-labels';" >> /home/ec2-user/term-assign-app/src/util/URLs.js
+
+          sudo npm install
+          sudo nohup npm start &
+      SecurityGroupIds:
+        - Ref: Ec2SecurityGroup
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow all inbound traffic
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+
+  #s3 bucket
+  ImageUploadBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: term-assign-bucket
+
+  #lambda function
+
+  ImageUploadFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ImageUploadFunction
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Role: arn:aws:iam::795126007298:role/LabRole
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import base64
+
+          s3 = boto3.client('s3')
+
+          def lambda_handler(event, context):
+              response = {'statusCode': 200, 'body': ''}
+
+              try:
+                  image_data = event['imageData']
+                  file_name = event['fileName']
+
+                  # Convert base64 encoded image data to binary
+                  decoded_image = base64.b64decode(image_data)
+
+                  params = {
+                      'Bucket': 'term-assign-bucket',
+                      'Key': file_name,
+                      'Body': decoded_image,
+                      'ContentType': 'image/jpeg',
+                      'ContentEncoding': 'base64',
+                  }
+
+                  s3.put_object(**params)
+                  response['body'] = json.dumps({'message': 'Image uploaded successfully!'})
+              except Exception as e:
+                  print(e)
+                  response['statusCode'] = 500
+                  response['body'] = json.dumps({'error': 'Failed to upload image'})
+
+              return response
+      Timeout: 30
+
+  ImageUploadFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ImageUploadFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageUploadAPIGateway}/*/*"
+
+  ImageUploadAPIGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: ImageUploadAPIGateway
+
+  ImageUploadResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ImageUploadAPIGateway
+      ParentId: !GetAtt ImageUploadAPIGateway.RootResourceId
+      PathPart: "upload-image"
+
+  ImageUploadOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      RestApiId: !Ref ImageUploadAPIGateway
+      ResourceId: !Ref ImageUploadResource
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              "method.response.header.Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE'"
+              "method.response.header.Access-Control-Allow-Origin": "'*'"
+            ResponseTemplates:
+              "application/json": ""
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          "application/json": '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": true
+            "method.response.header.Access-Control-Allow-Methods": true
+            "method.response.header.Access-Control-Allow-Origin": true
+          ResponseModels:
+            "application/json": "Empty"
+
+  ImageUploadEndpoint:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ImageUploadAPIGateway
+      ResourceId: !Ref ImageUploadResource
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ImageUploadFunction.Arn}/invocations
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      RequestParameters:
+        method.request.querystring.name: false
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  ImageUploadEndpointDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: ImageUploadEndpoint
+    Properties:
+      RestApiId: !Ref ImageUploadAPIGateway
+      StageName: prod
+
+  ImageLabelsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ImageLabelsFunction
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Role: arn:aws:iam::795126007298:role/LabRole
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+
+          rekognition = boto3.client('rekognition')
+
+          def lambda_handler(event, context):
+              response = {'statusCode': 200, 'body': ''}
+
+              try:
+                  file_name = event['fileName']
+
+                  params = {
+                      'Image': {
+                          'S3Object': {
+                              'Bucket': 'term-assign-bucket',
+                              'Name': file_name
+                          }
+                      }
+                  }
+
+                  # Example: Detecting labels in the image
+                  rekognition_response = rekognition.detect_labels(**params, MaxLabels=10,)
+                  response['body'] = json.dumps(rekognition_response)
+              except Exception as e:
+                  print(e)
+                  response['statusCode'] = 500
+                  response['body'] = json.dumps({'error': 'Failed to detect labels from image'})
+
+              return response
+      Timeout: 30
+
+  ImageLabelsFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ImageLabelsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageLabelsAPIGateway}/*/*"
+
+  ImageLabelsAPIGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: ImageLabelsAPIGateway
+
+  ImageLabelsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ImageLabelsAPIGateway
+      ParentId: !GetAtt ImageLabelsAPIGateway.RootResourceId
+      PathPart: "detect-labels"
+
+  ImageAnalysisOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      RestApiId: !Ref ImageLabelsAPIGateway
+      ResourceId: !Ref ImageLabelsResource
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              "method.response.header.Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE'"
+              "method.response.header.Access-Control-Allow-Origin": "'*'"
+            ResponseTemplates:
+              "application/json": ""
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          "application/json": '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": true
+            "method.response.header.Access-Control-Allow-Methods": true
+            "method.response.header.Access-Control-Allow-Origin": true
+          ResponseModels:
+            "application/json": "Empty"
+
+  ImageAnalysisEndpoint:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ImageLabelsAPIGateway
+      ResourceId: !Ref ImageLabelsResource
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ImageLabelsFunction.Arn}/invocations
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      RequestParameters:
+        method.request.querystring.name: false
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  ImageAnalysisEndpointDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: ImageAnalysisEndpoint
+    Properties:
+      RestApiId: !Ref ImageLabelsAPIGateway
+      StageName: prod
+
+Outputs:
+  ImageUploadApiUrl:
+    Description: "URL for Image Upload API"
+    Value: !Sub "https://${ImageUploadAPIGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/upload-image"
+  ImageAnalysisApiUrl:
+    Description: "URL for Image Analysis API"
+    Value: !Sub "https://${ImageLabelsAPIGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/detect-labels"
